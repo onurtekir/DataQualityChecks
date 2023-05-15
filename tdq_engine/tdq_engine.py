@@ -1,7 +1,7 @@
 class TDQEngine:
-    import pandas as pd
     from rule_definitions.tdq_rule_base import TDQRuleBase
     from tdq_engine.tdq_configuration import TDQConfiguration
+    from tdq_engine.tdq_result import TDQResult
     from tdq_engine.tdq_google_cloud_configuration import TDQGoogleCloudConfiguration
 
     def __init__(self, dq_check_configuration: TDQConfiguration = None, gcp_configuration: TDQGoogleCloudConfiguration = None):
@@ -47,7 +47,7 @@ class TDQEngine:
 
         return True if len(cte_blocks) == 1 else False
 
-    def _prepare_tdq_base_query(self, query: str) -> dict:
+    def _prepare_tdq_base_query(self, query: str, row_limit: int = None) -> dict:
         """
         Analyse and prepare DQ base script using the query of the data source.
 
@@ -62,25 +62,25 @@ class TDQEngine:
 
         import re
         base_query = ""
-        base_uuid = self._get_uuid()
-        query_base_cte = f"cte_query_base_{str(base_uuid).replace('-', '_')}"
+        check_uuid = self._get_uuid()
+        query_base_cte = f"cte_query_base_{str(check_uuid).replace('-', '_')}"
         if self._is_cte_exists(query):
             pattern = re.compile(r'\)\s*SELECT(?!.*FROM)([\s\S]*)', re.IGNORECASE)
             matches = pattern.search(query)
             if matches:
-                base_query = f"{query[:matches.start(0)]}), {query_base_cte} AS (SELECT {query[matches.start(1):]})"
+                base_query = f"{query[:matches.start(0)]}), {query_base_cte} AS (SELECT {query[matches.start(1):]} {f'LIMIT {row_limit}' if row_limit is not None else ''})"
             else:
                 raise Exception("Invalid SQL script. Please check the SQL script and try again")
         else:
             base_query = f"WITH {query_base_cte} AS ( {query} )"
-        return {"base_uuid": str(base_uuid), "base_query": base_query}
+        return {"check_uuid": str(check_uuid), "base_query": base_query}
 
     def _print_prepared_tdq_query(self, tdq_prep_result: dict):
         """
         Prints the details of prepared DQ check block.
 
                 Parameters:
-                        dq_prep_result (str): Prepare DQ check information
+                        tdq_prep_result (str): Prepare DQ check information
 
         """
         print(f"Check UUID: {tdq_prep_result['check_uuid']}")
@@ -95,28 +95,28 @@ class TDQEngine:
         print(f"QUERY")
         print(tdq_prep_result["check_query"])
 
-    def _prepare_tdq_query(self, base_query_config: dict, tdq_rules: list[TDQRuleBase]) -> dict:
+    def _prepare_tdq_check_query_config(self, base_query_config: dict, tdq_rules: list[TDQRuleBase]) -> dict:
         """
         Prepare the final SQL query for DQ check by appending DQ check blocks to base query .
 
                 Parameters:
-                        base_query (str): Base query preparation result
-                        dq_checks (list<dict>) : List of DQ checks that will be applied to base query
+                        base_query_config (dict): Base query configuration
+                        tdq_rules (list<dict>) : List of DQ checks that will be applied to base query
 
                 Returns:
                         dq_config (dict) : Final configuration for DQ checks includes base information and DQ checks
         """
 
         query = base_query_config["base_query"]
-        base_uuid = base_query_config["base_uuid"]
+        check_uuid = base_query_config["check_uuid"]
 
         # Append DQ check queries
-        query = f"""{query},{','.join(tdq_check.getRuleSQL(base_uuid=base_uuid) for tdq_check in tdq_rules)}"""
+        query = f"""{query},{','.join(tdq_check.getRuleSQL(check_uuid=check_uuid) for tdq_check in tdq_rules)}"""
 
         # Prepare final SQL statement
-        query = f"""{query} {' UNION ALL '.join(f"SELECT * FROM cte_check_{str(dq_check.getCheckUUID()).replace('-', '_')}" for dq_check in tdq_rules)}"""
+        query = f"""{query} {' UNION ALL '.join(f"SELECT * FROM cte_check_{str(dq_check.getRuleCheckUUID()).replace('-', '_')}" for dq_check in tdq_rules)}"""
 
-        return {"base_uuid": base_query_config["base_uuid"],
+        return {"base_uuid": base_query_config["check_uuid"],
                 "tdq_check_query": query,
                 "tdq_rules": tdq_rules}
 
@@ -129,10 +129,10 @@ class TDQEngine:
             if (self._gcp_configuration is None) or (self._tdq_configuration is None):
                 raise Exception("Error executing TDQ checks. GCP configuration and TDQ configuration should be defined. Please check the configuration and try again!")
 
-            #region Create TDQ tables
+            # region Create TDQ tables
             with bigquery.Client(project=self._gcp_configuration.getProjectId()) as client:
 
-                #region Prepare TDQ summary table
+                # region Prepare TDQ summary table
                 self._log_info("Preparing TDQ summary schema")
                 schema = [
                     bigquery.SchemaField(name="check_date", field_type="DATE", description="TDQ data quality check date"),
@@ -145,7 +145,7 @@ class TDQEngine:
                     bigquery.SchemaField(name="success_count", field_type="INT64", description="TDQ success expectations count"),
                     bigquery.SchemaField(name="failed_count", field_type="INT64", description="TDQ failed expectations count"),
                     bigquery.SchemaField(name="execution_start_time", field_type="TIMESTAMP", description="TDQ data quality check execution start timestamp"),
-                    bigquery.SchemaField(name="execution_end_time", field_type="STRING", description="TDQ data quality check execution end timestamp"),
+                    bigquery.SchemaField(name="execution_end_time", field_type="TIMESTAMP", description="TDQ data quality check execution end timestamp"),
                     bigquery.SchemaField(name="is_success", field_type="BOOLEAN", description="TDQ data quality check success/failed flag"),
                     bigquery.SchemaField(name="execution_parameters", field_type="JSON", description="TDQ data quality check execution parameters"),
                     bigquery.SchemaField(name="execution_message", field_type="STRING", description="TDQ data quality check execution message.")
@@ -161,9 +161,9 @@ class TDQEngine:
                 # Create table if not exists
                 self._log_info(f"Creating TDQ summary table `{self._gcp_configuration.getProjectId()}`.`{self._gcp_configuration.getDatasetId()}.{self._gcp_configuration.getTDQSummaryTable()}`")
                 client.create_table(table=table, exists_ok=True)
-                #endregion
+                # endregion
 
-                #region Prepare TDQ results table
+                # region Prepare TDQ results table
                 schema = [
                     bigquery.SchemaField(name="check_date", field_type="DATE", description="TDQ check date"),
                     bigquery.SchemaField(name="check_uuid", field_type="STRING", description="TDQ check unique UUID"),
@@ -178,6 +178,7 @@ class TDQEngine:
                     bigquery.SchemaField(name="expected_count", field_type="INT64", description="Expected rows count"),
                     bigquery.SchemaField(name="unexpected_ratio", field_type="FLOAT64", description="Unexpected results ratio"),
                     bigquery.SchemaField(name="expected_ratio", field_type="FLOAT64", description="Expected results ratio"),
+                    bigquery.SchemaField(name="is_valid", field_type="BOOLEAN", description="True if rule check definition is valid"),
                     bigquery.SchemaField(name="is_passed", field_type="BOOLEAN", description="True if unexpected ratio is less than threshold else False")
                 ]
                 # Prepare table reference
@@ -189,9 +190,9 @@ class TDQEngine:
                 # Create table if not exists
                 self._log_info(f"Creating TDQ results table `{self._gcp_configuration.getProjectId()}`.`{self._gcp_configuration.getDatasetId()}.{self._gcp_configuration.getTDQResultsTable()}`")
                 client.create_table(table=table, exists_ok=True)
-                #endregion
+                # endregion
 
-            #endregion
+            # endregion
 
             self._log_info("TDQ tables created successfully")
 
@@ -205,21 +206,22 @@ class TDQEngine:
             self._log_error(f"Error creating TDQ tables. Error Message: {str(ex)}")
             return {"success": False, "error": str(ex)}
 
-    def _execute_tdq_checks(self, tdq_check_query: str = None) -> dict:
+    def _execute_bq_query(self, project_id: str = None, query: str = None) -> dict:
         try:
             from google.cloud import bigquery
 
             execution_results = None
             with bigquery.Client(project=self._gcp_configuration.getProjectId()) as client:
-                execute_result = client.query(query=tdq_check_query, project=self._gcp_configuration.getProjectId())
-                execution_results = execute_result.result()
+                query_job = client.query(query=query, project=project_id)
+                execution_results = query_job.result().to_dataframe()
 
             if execution_results is not None:
-                return {"success": True, "tdq_results": execution_results.to_dataframe()}
+                return {"success": True, "results": execution_results}
             else:
-                raise Exception("Error executing TDQ checks")
+                raise Exception("Error executing BigQuery script")
 
         except Exception as ex:
+            self._log_error(f"Error execution BigQuery script. Error message: {str(ex)}")
             return {"success": False, "error": str(ex)}
 
     def _validate_rules(self, tdq_rules: list[TDQRuleBase]):
@@ -235,16 +237,141 @@ class TDQEngine:
 
         return valid_rules, invalid_rules
 
+    def _generate_invalid_checks_dataset(self, invalid_rules: list[TDQRuleBase] = []):
+        import pandas as pd
+        import json
+
+        df = pd.DataFrame(columns=["check_uuid",
+                                   "rule_uuid",
+                                   "type",
+                                   "check_type",
+                                   "column_name",
+                                   "parameters",
+                                   "threshold",
+                                   "row_count",
+                                   "unexpected_count",
+                                   "expected_count",
+                                   "unexpected_ratio",
+                                   "expected_ratio",
+                                   "is_passed",
+                                   "is_valid"])
+        for invalid_rule in invalid_rules:
+            df = pd.concat([df, pd.DataFrame({
+                "check_uuid": [str(invalid_rule.getCheckUUID())],
+                "rule_uuid": [str(invalid_rule.getRuleCheckUUID())],
+                "type": [invalid_rule.getRuleType().value],
+                "check_type": [invalid_rule.getRuleCheckType()],
+                "column_name": [invalid_rule.getColumnName()],
+                "parameters": [json.dumps(invalid_rule.getParameters())],
+                "threshold": [invalid_rule.getThreshold()],
+                "row_count": [None],
+                "unexpected_count": [None],
+                "expected_count": [None],
+                "unexpected_ratio": [None],
+                "expected_ratio": [None],
+                "is_passed": [False],
+                "is_valid": [False]
+            })], ignore_index=True)
+
+        return df
+
+    def _save_summary(self, tdq_result: TDQResult = None) -> dict:
+        try:
+            from google.cloud import bigquery
+            with bigquery.Client(project=tdq_result.getGCPProjectId()) as client:
+                table_id = f"{tdq_result.getGCPProjectId()}.{tdq_result.getGCPDatasetId()}.{tdq_result.getGCPSummaryTable()}"
+                table = client.get_table(table=table_id)
+                df_summary_row = tdq_result.getSummaryDataFrame()
+                errors = client.insert_rows_from_dataframe(table=table, dataframe=df_summary_row)
+                if not any(errors):
+                    self._log_info(f"TDQ summary results saved to `{tdq_result.getGCPProjectId()}`.`{tdq_result.getGCPDatasetId()}.{tdq_result.getGCPSummaryTable()}` successfully")
+                    return {"success": True}
+                else:
+                    return {"success": False, "error": errors}
+        except Exception as ex:
+            self._log_error(f"Error saving TDQ summary. Error message: {str(ex)}")
+            return {"success": False, "error": [[str(ex)]]}
+
+    def _save_tdq_check_results(self, tdq_result: TDQResult = None) -> dict:
+        try:
+            from google.cloud import bigquery
+            with bigquery.Client(project=tdq_result.getGCPProjectId()) as client:
+                table_id = f"{tdq_result.getGCPProjectId()}.{tdq_result.getGCPDatasetId()}.{tdq_result.getGCPResultsTable()}"
+                table = client.get_table(table=table_id)
+                df_check_results = tdq_result.getResultsDataFrame()
+                errors = client.insert_rows_from_dataframe(table=table, dataframe=df_check_results)
+                if not any(errors):
+                    self._log_info(f"TDQ check results saved to `{tdq_result.getGCPProjectId()}`.`{tdq_result.getGCPDatasetId()}.{tdq_result.getGCPResultsTable()}` successfully")
+                    return {"success": True}
+                else:
+                    return {"success": False, "error": errors}
+
+        except Exception as ex:
+            self._log_error(f"Error saving TDQ check results. Error message: {str(ex)}")
+            return {"success": False, "error": [[str(ex)]]}
 
     # endregion
 
     # region Public Methods
 
-    def set_TDQConfiguration(self, tdq_configuration: TDQConfiguration = None):
-        self._tdq_configuration = tdq_configuration
+    def _execute_tdq_checks(self, base_query: str, tdq_rules: list[TDQRuleBase] = [], row_limit: int = None):
+
+        # Import libraries
+        import pandas as pd
+
+        # Validate rules
+        valid_rules, invalid_rules = self._validate_rules(tdq_rules=tdq_rules)
+
+        # Prepare/Create TDQ tables
+        tdq_tables_config = self._prepare_tdq_tables()
+
+        # If success, start preparing and executing TDQ checks
+        if tdq_tables_config["success"]:
+
+            # Prepare TDQ base config
+            self._log_info("Preparing TDQ base query config")
+            tdq_base_config = self._prepare_tdq_base_query(query=base_query, row_limit=row_limit)
+            check_uuid = tdq_base_config['check_uuid']
+            self._log_info(f"TDQ Check UUID: {check_uuid}")
+            self._log_info(f"TDQ Base Query\n{tdq_base_config['base_query'].strip()}")
+
+            # Prepare TDQ checks query for valid rules
+            self._log_info("Preparing TDQ query config (Only for valid rules)")
+            tdq_query_config = self._prepare_tdq_check_query_config(base_query_config=tdq_base_config, tdq_rules=valid_rules)
+            self._log_info(f"TDQ Checks Query\n{tdq_query_config['tdq_check_query']}")
+
+            # Execute TDQ checks query
+            self._log_info(f"Start executing valid TDQ checks. {len(valid_rules)} will be executed!")
+            execution_results = self._execute_bq_query(project_id=self.get_GCPConfiguration().getProjectId(), query=tdq_query_config['tdq_check_query'])
+
+            # If success, append invalid rules information to results
+            if execution_results["success"]:
+                # Get valid checks execution results dataframe
+                df_tdq_results = execution_results["results"]
+                self._log_info("Valid TDQ checks execution completed successfully")
+                self._log_info("Adding invalid TDQ checks with is_valid=False flag")
+
+                for invalid_rule in invalid_rules:
+                    invalid_rule.setCheckUUID(check_uuid)
+                    df_tdq_results = pd.concat([df_tdq_results, self._generate_invalid_checks_dataset(invalid_rules=[invalid_rule])], ignore_index=True)
+
+                return {"success": True, "check_uuid": check_uuid, "tdq_results": df_tdq_results}
+
+            else:
+                return {"success": False, "check_uuid": check_uuid, "error": execution_results.get("error", "Unknown error")}
+
+            # endregion
+
+            # region Execute TDQ checks query and get results as DataFrame
+
+        else:
+            return {"success": False, "error": tdq_tables_config.get("error", "Unknown error")}
 
     def set_GCPConfiguration(self, gcp_configuration: TDQGoogleCloudConfiguration = None):
         self._gcp_configuration = gcp_configuration
+
+    def set_TDQConfiguration(self, tdq_configuration: TDQConfiguration = None):
+        self._tdq_configuration = tdq_configuration
 
     def get_TDQConfiguration(self):
         return self._tdq_configuration
@@ -252,50 +379,77 @@ class TDQEngine:
     def get_GCPConfiguration(self):
         return self._gcp_configuration
 
-    def run_data_quality_checks(self,
-                                base_query: str,
-                                tdq_rules: list[TDQRuleBase] = []):
+    def run_data_quality_checks(self, base_query: str, tdq_rules: list[TDQRuleBase] = [], save_results: bool = True):
+        from datetime import datetime
+        from tdq_engine.tdq_result import TDQResult
 
-        import uuid
+        start_time = datetime.utcnow()
+        df_tdq_results = self._execute_tdq_checks(base_query=base_query, tdq_rules=tdq_rules)
+        end_time = datetime.utcnow()
+        if df_tdq_results["success"]:
+            tdq_results = TDQResult()
+            tdq_results.setCheckUUID(df_tdq_results["check_uuid"])
+            tdq_results.setCheckName(self.get_TDQConfiguration().getTDQCheckName())
+            tdq_results.setCheckDescription(self.get_TDQConfiguration().getTDQCheckDescription())
+            tdq_results.setCheckParameters(self.get_TDQConfiguration().getTDQParameters())
+            tdq_results.setGCPProjectId(self.get_GCPConfiguration().getProjectId())
+            tdq_results.setGCPDatasetId(self.get_GCPConfiguration().getDatasetId())
+            tdq_results.setGCPResultsTable(self.get_GCPConfiguration().getTDQResultsTable())
+            tdq_results.setGCPSummaryTable(self.get_GCPConfiguration().getTDQSummaryTable())
+            tdq_results.processCheckResults(df_tdq_results["tdq_results"])
+            tdq_results.setStartTime(start_time=start_time)
+            tdq_results.setEndTime(end_time=end_time)
+            self._log_info(f"TDQ checks execution finished in {tdq_results.getDurationSeconds()} seconds!")
 
-        # Validate rules
-        valid_rules, invalid_rules = self._validate_rules(tdq_rules=tdq_rules)
-
-        # Prepare/Create TDQ tables
-        tdq_tables_config = self._prepare_tdq_tables()
-        # If success, start preparing and executing TDQ checks
-        if tdq_tables_config["success"]:
-
-            # region Prepare data quality checks script
-
-            # Generate unique DQ UUID
-            self._log_info("Preparing TDQ base UUID")
-            tdq_uuid = uuid.uuid4()
-            self._log_info(f"Generated TDQ UUID is {str(tdq_uuid)}")
-
-            # Prepare DQ base config
-            self._log_info("Preparing base query config")
-            tdq_base_config = self._prepare_tdq_base_query(query=base_query)
-            self._log_info(f"Base Query\n{tdq_base_config['base_query'].strip()}")
-
-            # Prepare DQ query
-            self._log_info("Preparing TDQ query config (Only for valid rules)")
-            tdq_config = self._prepare_tdq_query(base_query_config=tdq_base_config, tdq_rules=valid_rules)
-            self._log_info(f"TDQ Checks Query\n{tdq_config['tdq_check_query']}")
-
-            # endregion
-
-            # region Execute TDQ checks script for valid rules
-
-            execution_results = self._execute_tdq_checks(valid_rules)
-            print(execution_results["success"])
-
-            # endregion
-
-            # region Execute TDQ checks query and get results as DataFrame
-
+            if save_results:
+                self._log_info(f"Saving TDQ checks summary to `{self.get_GCPConfiguration().getProjectId()}`.`{self.get_GCPConfiguration().getDatasetId()}.{self.get_GCPConfiguration().getTDQSummaryTable()}`")
+                summary_save_result = self._save_summary(tdq_result=tdq_results)
+                if summary_save_result["success"]:
+                    self._log_info(f"Saving TDQ check results summary to `{self.get_GCPConfiguration().getProjectId()}`.`{self.get_GCPConfiguration().getDatasetId()}.{self.get_GCPConfiguration().getTDQResultsTable()}`")
+                    check_results_save_result = self._save_tdq_check_results(tdq_result=tdq_results)
+                    if check_results_save_result["success"]:
+                        return {"success": True, "tdq_results": tdq_results}
+                    else:
+                        return check_results_save_result
+                else:
+                    return summary_save_result
         else:
-            # TODO : Failed process
-            pass
+            return {"success": False, "error": df_tdq_results.get("error", "Unknown error")}
+
+    def test_rule(self, base_query: str, tdq_rule: TDQRuleBase = None, row_limit: int = None):
+        import json
+
+        # Check if rule is valid. If the rule is invalid return False with `Rule is not valid` error
+        if not tdq_rule.isValid():
+            return {"success": False, "error": "Rule is not valid. Please check the rule and try again"}
+
+        df_tdq_test_rule_results = self._execute_tdq_checks(base_query=base_query, tdq_rules=[tdq_rule], row_limit=row_limit)
+        if df_tdq_test_rule_results["success"]:
+            df_results = df_tdq_test_rule_results["tdq_results"]
+            df_results = df_results.drop(columns=['check_uuid', 'rule_uuid'], axis=1)
+
+            # Print Test Results
+            print("#### TDQ Rule Check Test Results ####")
+            print(f"Rule Type        : {df_results.iloc[0]['type']}")
+            print(f"Rule Check Type  : {df_results.iloc[0]['check_type']}")
+            print(f"Column Name      : {df_results.iloc[0]['column_name']}")
+            parameters = json.loads(df_results.iloc[0]['parameters'])
+            if len(parameters) > 0:
+                print("Parameters")
+                for parameter in parameters:
+                    print(f"\t- {parameter}: {parameters[parameter]}")
+            else:
+                print("Parameters: No parameters specified")
+            print(f"Threshold        : {'{0:.0%}'.format(df_results.iloc[0]['threshold'])}")
+            print(f"Passed           : {df_results.iloc[0]['is_passed']}")
+
+            # Print statistics if valid
+            print(f"Row Count        : {df_results.iloc[0]['row_count']}")
+            print(f"Expected Count   : {'{0:.0%}'.format(df_results.iloc[0]['expected_ratio'])}\t{df_results.iloc[0]['expected_count']}")
+            print(f"Unexpected Count : {'{0:.0%}'.format(df_results.iloc[0]['unexpected_ratio'])}\t{df_results.iloc[0]['unexpected_count']}")
+
+            return {"success": True, "test_results": df_results}
+        else:
+            return {"success": False, "error": df_tdq_test_rule_results.get("error", "Unknown error")}
 
     # endregion

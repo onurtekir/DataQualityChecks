@@ -13,7 +13,7 @@ class TDQRuleBase:
 
     def __init__(self, rule_type: RULE_TYPE = None,  rule_check_type: str = None, column_name: str = None, threshold: float = 0.0):
         self._initialize()
-        self._checkUUID = uuid.uuid4()
+        self._ruleCheckUUID = uuid.uuid4()
         self._ruleType = rule_type
         self.setRuleCheckType(check_type=rule_check_type)
         self.setColumnName(column_name=column_name)
@@ -21,8 +21,8 @@ class TDQRuleBase:
 
     def _initialize(self):
         self._ruleType: RULE_TYPE = None
-        self._baseUUID: uuid.UUID = None
-        self._ruleUUID: uuid.UUID = None
+        self._checkUUID: uuid.UUID = None
+        self._ruleCheckUUID: uuid.UUID = None
         self._checkType: str = None
         self._parameters: dict = {}
         self._threshold: float = None
@@ -38,8 +38,8 @@ class TDQRuleBase:
 
     # region Getters/Setters
 
-    def setRuleUUID(self, base_uuid: uuid.UUID):
-        self._baseUUID = base_uuid
+    def setCheckUUID(self, base_uuid: uuid.UUID):
+        self._checkUUID = base_uuid
 
     def setRuleCheckType(self, check_type: str):
         self._checkType = check_type
@@ -53,16 +53,16 @@ class TDQRuleBase:
     def setParameter(self, key: str, value: any):
         self._parameters[key] = value
 
-    def getBaseUUID(self):
-        if self._baseUUID is None:
-            return uuid.UUID(int=0)
-        else:
-            return self._baseUUID
-
     def getCheckUUID(self):
         if self._checkUUID is None:
-            self._checkUUID = uuid.uuid4()
-        return self._checkUUID
+            return uuid.UUID(int=0)
+        else:
+            return self._checkUUID
+
+    def getRuleCheckUUID(self):
+        if self._ruleCheckUUID is None:
+            self._ruleCheckUUID = uuid.uuid4()
+        return self._ruleCheckUUID
 
     def getRuleCheckType(self):
         return self._checkType
@@ -76,8 +76,8 @@ class TDQRuleBase:
     def getParameter(self, key: str, default: any = None):
         return self._parameters.get(key, default)
 
-    def getRuleSQL(self, base_uuid: uuid = None):
-        self.setRuleUUID(base_uuid=base_uuid)
+    def getRuleSQL(self, check_uuid: uuid = None):
+        self.setCheckUUID(base_uuid=check_uuid)
         return self._prepare_rule_sql()
 
     def getColumnName(self):
@@ -87,13 +87,13 @@ class TDQRuleBase:
         return self._threshold
 
     def getBaseCTE(self):
-        base_cte = f"cte_query_base_{str(self.getBaseUUID()).replace('-', '_')}"
+        base_cte = f"cte_query_base_{str(self.getCheckUUID()).replace('-', '_')}"
         return base_cte
 
     def isValid(self):
         # Check if mandatory parameters set
         return (self.getCheckUUID() is not None) & \
-               (self.getBaseUUID() is not None) & \
+               (self.getRuleCheckUUID() is not None) & \
                (self.getRuleCheckType() is not None) & \
                (self.getColumnName() is not None) & \
                (self.getThreshold() is not None) & \
@@ -101,7 +101,7 @@ class TDQRuleBase:
 
     def printConfiguration(self):
         print(f"Rule Valid: {self.isValid()}")
-        print(f"Rule UUID: {str(self._checkUUID)}")
+        print(f"Rule Check UUID: {str(self.getRuleCheckUUID())}")
         print(f"Type: {str(self.getRuleType().value)}")
         print(f"Rule Check Type: {self.getRuleCheckType()}")
         print(f"Column Name: {self.getColumnName()}")

@@ -14,11 +14,11 @@ class check_NULL(TDQRuleBase):
 
     def _prepare_rule_sql(self):
         query = f"""
-            cte_check_{str(self.getCheckUUID()).replace('-', '_')} AS (
+            cte_check_{str(self.getRuleCheckUUID()).replace('-', '_')} AS (
                 SELECT 
-                    "{str(self.getBaseUUID())}" AS check_uuid,
-                    "{str(self.getCheckUUID())}" AS rule_uuid,
-                    "{str(self.getRuleType())}" AS type,
+                    "{str(self.getCheckUUID())}" AS check_uuid,
+                    "{str(self.getRuleCheckUUID())}" AS rule_uuid,
+                    "{str(self.getRuleType().value)}" AS type,
                     "{self.getRuleCheckType()}" AS check_type,
                     "{self.getColumnName()}" AS column_name,
                     '{json.dumps(self.getParameters())}' AS parameters,
@@ -26,9 +26,9 @@ class check_NULL(TDQRuleBase):
                     COUNT(1) AS row_count,
                     COUNTIF({self.getColumnName()} IS NULL) AS unexpected_count,
                     COUNTIF({self.getColumnName()} IS NOT NULL) AS expected_count,
-                    ROUND((COUNTIF({self.getColumnName()} IS NULL) / COUNT(1)), 4) AS unexpected_ratio,
-                    ROUND((COUNTIF({self.getColumnName()} IS NOT NULL) / COUNT(1)), 4) AS expected_ratio,
-                    IF((COUNTIF({self.getColumnName()} IS NULL) / COUNT(1)) > {self.getThreshold()}, False, True) AS is_passed,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS NULL), COUNT(1)), 0), 4) AS unexpected_ratio,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS NOT NULL), COUNT(1)), 0), 4) AS expected_ratio,
+                    IF(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS NULL), COUNT(1)), 0) > {self.getThreshold()}, False, True) AS is_passed,
                     {self.isValid()} AS is_valid
                 FROM
                     {self.getBaseCTE()}
@@ -47,10 +47,10 @@ class check_NOT_NULL(TDQRuleBase):
 
     def _prepare_rule_sql(self):
         query = f"""
-                cte_check_{str(self.getCheckUUID()).replace('-', '_')} AS (
+                cte_check_{str(self.getRuleCheckUUID()).replace('-', '_')} AS (
                     SELECT 
-                        "{str(self.getBaseUUID())}" AS check_uuid,
-                        "{str(self.getCheckUUID())}" AS rule_uuid,
+                        "{str(self.getCheckUUID())}" AS check_uuid,
+                        "{str(self.getRuleCheckUUID())}" AS rule_uuid,
                         "{self.getRuleType().value}" AS type,
                         "{self.getRuleCheckType()}" AS check_type,
                         "{self.getColumnName()}" AS column_name,
@@ -59,9 +59,9 @@ class check_NOT_NULL(TDQRuleBase):
                         COUNT(1) AS row_count,
                         COUNTIF({self.getColumnName()} IS NULL) AS unexpected_count,
                         COUNTIF({self.getColumnName()} IS NOT NULL) AS expected_count,
-                        ROUND((COUNTIF({self.getColumnName()} IS NULL) / COUNT(1)), 4) AS unexpected_ratio,
-                        ROUND((COUNTIF({self.getColumnName()} IS NOT NULL) / COUNT(1)), 4) AS expected_ratio,
-                        IF((COUNTIF({self.getColumnName()} IS NULL) / COUNT(1)) > {self.getThreshold()}, False, True) AS is_passed,
+                        ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS NULL), COUNT(1)), 0), 4) AS unexpected_ratio,
+                        ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS NOT NULL), COUNT(1)), 0), 4) AS expected_ratio,
+                        IF(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS NULL), COUNT(1)), 0) > {self.getThreshold()}, False, True) AS is_passed,
                         {self.isValid()} AS is_valid
                     FROM
                         {self.getBaseCTE()}
@@ -85,10 +85,10 @@ class check_NULL_OR_EMPTY(TDQRuleBase):
         trimmed = self.getParameter(key="is_trimmed", default=False)
 
         query = f"""
-            cte_check_{str(self.getCheckUUID()).replace('-', '_')} AS (
+            cte_check_{str(self.getRuleCheckUUID()).replace('-', '_')} AS (
                 SELECT 
-                    "{str(self.getBaseUUID())}" AS check_uuid,
-                    "{str(self.getCheckUUID())}" AS rule_uuid,
+                    "{str(self.getCheckUUID())}" AS check_uuid,
+                    "{str(self.getRuleCheckUUID())}" AS rule_uuid,
                     "{self.getRuleType().value}" AS type,
                     "{self.getRuleCheckType()}" AS check_type,
                     "{self.getColumnName()}" AS column_name,
@@ -97,9 +97,9 @@ class check_NULL_OR_EMPTY(TDQRuleBase):
                     COUNT(1) AS row_count,
                     COUNTIF({self.getColumnName()} IS NOT NULL AND {f"TRIM({self.getColumnName()}) != ''" if trimmed else f"{self.getColumnName()} != ''"}) AS unexpected_count,
                     COUNTIF({self.getColumnName()} IS NULL OR {f"TRIM({self.getColumnName()}) = ''" if trimmed else f"{self.getColumnName()} = ''"}) AS expected_count,
-                    ROUND((COUNTIF({self.getColumnName()} IS NOT NULL AND {f"TRIM({self.getColumnName()}) != ''" if trimmed else f"{self.getColumnName()} != ''"}) / COUNT(1)), 4) AS unexpected_ratio,
-                    ROUND((COUNTIF({self.getColumnName()} IS NULL AND {f"TRIM({self.getColumnName()}) = ''" if trimmed else f"{self.getColumnName()} = ''"}) / COUNT(1)), 4) AS expected_ratio,
-                    IF((COUNTIF({self.getColumnName()} IS NOT NULL AND {f"TRIM({self.getColumnName()}) != ''" if trimmed else f"{self.getColumnName()} != ''"}) / COUNT(1)) > {self.getThreshold()}, False, True) AS is_passed,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS NOT NULL AND {f"TRIM({self.getColumnName()}) != ''" if trimmed else f"{self.getColumnName()} != ''"}), COUNT(1)), 0), 4) AS unexpected_ratio,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS NULL AND {f"TRIM({self.getColumnName()}) = ''" if trimmed else f"{self.getColumnName()} = ''"}), COUNT(1)), 0), 4) AS expected_ratio,
+                    IF(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS NOT NULL AND {f"TRIM({self.getColumnName()}) != ''" if trimmed else f"{self.getColumnName()} != ''"}), COUNT(1)), 0) > {self.getThreshold()}, False, True) AS is_passed,
                     {self.isValid()} AS is_valid
                 FROM
                     {self.getBaseCTE()}
@@ -126,10 +126,10 @@ class check_GREATER_THAN(TDQRuleBase):
         or_equal = self.getParameter(key="or_equal", default=False)
 
         query = f"""
-            cte_check_{str(self.getCheckUUID()).replace('-', '_')} AS (
+            cte_check_{str(self.getRuleCheckUUID()).replace('-', '_')} AS (
                 SELECT 
-                    "{str(self.getBaseUUID())}" AS check_uuid,
-                    "{str(self.getCheckUUID())}" AS rule_uuid,
+                    "{str(self.getCheckUUID())}" AS check_uuid,
+                    "{str(self.getRuleCheckUUID())}" AS rule_uuid,
                     "{self.getRuleType().value}" AS type,
                     "{self.getRuleCheckType()}" AS check_type,
                     "{self.getColumnName()}" AS column_name,
@@ -138,9 +138,9 @@ class check_GREATER_THAN(TDQRuleBase):
                     COUNT(1) AS row_count,
                     COUNTIF({self.getColumnName()} {"<" if or_equal else "<="} {value}) AS unexpected_count,
                     COUNTIF({self.getColumnName()} {">=" if or_equal else ">"} {value}) AS expected_count,
-                    ROUND((COUNTIF({self.getColumnName()} {"<" if or_equal else "<="} {value}) / COUNT(1)), 4) AS unexpected_ratio,
-                    ROUND((COUNTIF({self.getColumnName()} {">=" if or_equal else ">"} {value}) / COUNT(1)), 4) AS expected_ratio,
-                    IF((COUNTIF({self.getColumnName()} {"<" if or_equal else "<="} {value}) / COUNT(1)) > {self.getThreshold()}, False, True) AS is_passed,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} {"<" if or_equal else "<="} {value}), COUNT(1)), 0), 4) AS unexpected_ratio,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} {">=" if or_equal else ">"} {value}), COUNT(1)), 0), 4) AS expected_ratio,
+                    IF(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} {"<" if or_equal else "<="} {value}), COUNT(1)), 0) > {self.getThreshold()}, False, True) AS is_passed,
                     {self.isValid()} AS is_valid
                 FROM
                     {self.getBaseCTE()}
@@ -167,10 +167,10 @@ class check_LESS_THAN(TDQRuleBase):
         or_equal = self.getParameter(key="or_equal", default=False)
 
         query = f"""
-            cte_check_{str(self.getCheckUUID()).replace('-', '_')} AS (
+            cte_check_{str(self.getRuleCheckUUID()).replace('-', '_')} AS (
                 SELECT 
-                    "{str(self.getBaseUUID())}" AS check_uuid,
-                    "{str(self.getCheckUUID())}" AS rule_uuid,
+                    "{str(self.getCheckUUID())}" AS check_uuid,
+                    "{str(self.getRuleCheckUUID())}" AS rule_uuid,
                     "{self.getRuleType().value}" AS type,
                     "{self.getRuleCheckType()}" AS check_type,
                     "{self.getColumnName()}" AS column_name,
@@ -179,20 +179,21 @@ class check_LESS_THAN(TDQRuleBase):
                     COUNT(1) AS row_count,
                     COUNTIF({self.getColumnName()} {">" if or_equal else ">="} {value}) AS unexpected_count,
                     COUNTIF({self.getColumnName()} {"<=" if or_equal else "<"} {value}) AS expected_count,
-                    ROUND((COUNTIF({self.getColumnName()} {">" if or_equal else ">="} {value}) / COUNT(1)), 4) AS unexpected_ratio,
-                    ROUND((COUNTIF({self.getColumnName()} {"<=" if or_equal else "<"} {value}) / COUNT(1)), 4) AS expected_ratio,
-                    IF((COUNTIF({self.getColumnName()} {">" if or_equal else ">="} {value}) / COUNT(1)) > {self.getThreshold()}, False, True) AS is_passed,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} {">" if or_equal else ">="} {value}), COUNT(1)), 0), 4) AS unexpected_ratio,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} {"<=" if or_equal else "<"} {value}), COUNT(1)), 0), 4) AS expected_ratio,
+                    IF(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} {">" if or_equal else ">="} {value}), COUNT(1)), 0) > {self.getThreshold()}, False, True) AS is_passed,
                     {self.isValid()} AS is_valid
                 FROM
                     {self.getBaseCTE()}
             )
         """
+        return query
 
 
 class check_BETWEEN(TDQRuleBase):
 
     def __init__(self, column_name: str = None, threshold: float = 0.0,
-                 min_value: Number = None, max_value: Number = None, strict_min: bool = False, strict_max:bool = False):
+                 min_value: Number = None, max_value: Number = None, strict_min: bool = False, strict_max: bool = False):
         super().__init__(rule_type=RULE_TYPE.ROW_BASED,
                          rule_check_type="BETWEEN",
                          column_name=column_name,
@@ -228,10 +229,10 @@ class check_BETWEEN(TDQRuleBase):
             unexpected_between_sql_parts.append(f"{self.getColumnName()} > {max_value}" if strict_max else f"{self.getColumnName()} >= {max_value}")
 
         query = f"""
-            cte_check_{str(self.getCheckUUID()).replace('-', '_')} AS (
+            cte_check_{str(self.getRuleCheckUUID()).replace('-', '_')} AS (
                 SELECT 
-                    "{str(self.getBaseUUID())}" AS check_uuid,
-                    "{str(self.getCheckUUID())}" AS rule_uuid,
+                    "{str(self.getCheckUUID())}" AS check_uuid,
+                    "{str(self.getRuleCheckUUID())}" AS rule_uuid,
                     "{self.getRuleType().value}" AS type,
                     "{self.getRuleCheckType()}" AS check_type,
                     "{self.getColumnName()}" AS column_name,
@@ -239,10 +240,10 @@ class check_BETWEEN(TDQRuleBase):
                     {self.getThreshold()} AS threshold,
                     COUNT(1) AS row_count,
                     {f"COUNTIF({' OR '.join(unexpected_between_sql_parts)})"} AS unexpected_count,
-                    {f"COUNTIF({' AND '.join(expected_between_sql_parts)})"} AS expected_count
-                    ROUND(({f"COUNTIF({' OR '.join(unexpected_between_sql_parts)})"} / COUNT(1)), 4) AS unexpected_ratio,
-                    ROUND(({f"COUNTIF({' AND '.join(expected_between_sql_parts)})"} / COUNT(1)), 4) AS expected_ratio,
-                    IF(({f"COUNTIF({' OR '.join(unexpected_between_sql_parts)})"} / COUNT(1)) > {self.getThreshold()}, False, True) AS is_passed,
+                    {f"COUNTIF({' AND '.join(expected_between_sql_parts)})"} AS expected_count,
+                    ROUND(COALESCE(SAFE_DIVIDE({f"COUNTIF({' OR '.join(unexpected_between_sql_parts)})"}, COUNT(1)), 0), 4) AS unexpected_ratio,
+                    ROUND(COALESCE(SAFE_DIVIDE({f"COUNTIF({' AND '.join(expected_between_sql_parts)})"}, COUNT(1)), 0), 4) AS expected_ratio,
+                    IF(COALESCE(SAFE_DIVIDE({f"COUNTIF({' OR '.join(unexpected_between_sql_parts)})"}, COUNT(1)), 0) > {self.getThreshold()}, False, True) AS is_passed,
                     {self.isValid()} AS is_valid
                 FROM
                     {self.getBaseCTE()}
@@ -284,10 +285,10 @@ class check_IN(TDQRuleBase):
                 ','.join(str(x) for x in values)
 
         query = f"""
-            cte_check_{str(self.getCheckUUID()).replace('-', '_')} AS (
+            cte_check_{str(self.getRuleCheckUUID()).replace('-', '_')} AS (
                 SELECT 
-                    "{str(self.getBaseUUID())}" AS check_uuid,
-                    "{str(self.getCheckUUID())}" AS rule_uuid,
+                    "{str(self.getCheckUUID())}" AS check_uuid,
+                    "{str(self.getRuleCheckUUID())}" AS rule_uuid,
                     "{self.getRuleType().value}" AS type,
                     "{self.getRuleCheckType()}" AS check_type,
                     "{self.getColumnName()}" AS column_name,
@@ -296,9 +297,9 @@ class check_IN(TDQRuleBase):
                     COUNT(1) AS row_count,
                     COUNTIF({self.getColumnName()} NOT IN({in_sql_statement})) AS unexpected_count,
                     COUNTIF({self.getColumnName()} IN({in_sql_statement})) AS expected_count,
-                    ROUND((COUNTIF({self.getColumnName()} NOT IN({in_sql_statement})) / COUNT(1)), 4) AS unexpected_ratio,
-                    ROUND((COUNTIF({self.getColumnName()} IN({in_sql_statement})) / COUNT(1)), 4) AS expected_ratio,
-                    IF((COUNTIF({self.getColumnName()} NOT IN({in_sql_statement})) / COUNT(1)) > {self.getThreshold()}, False, True) AS is_passed,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} NOT IN({in_sql_statement})), COUNT(1)), 0), 4) AS unexpected_ratio,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IN({in_sql_statement})), COUNT(1)), 0), 4) AS expected_ratio,
+                    IF(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} NOT IN({in_sql_statement})), COUNT(1)), 0) > {self.getThreshold()}, False, True) AS is_passed,
                     {self.isValid()} AS is_valid
                 FROM
                     {self.getBaseCTE()}
@@ -340,10 +341,10 @@ class check_NOT_IN(TDQRuleBase):
                 ','.join(str(x) for x in values)
 
         query = f"""
-            cte_check_{str(self.getCheckUUID()).replace('-', '_')} AS (
+            cte_check_{str(self.getRuleCheckUUID()).replace('-', '_')} AS (
                 SELECT 
-                    "{str(self.getBaseUUID())}" AS check_uuid,
-                    "{str(self.getCheckUUID())}" AS rule_uuid,
+                    "{str(self.getCheckUUID())}" AS check_uuid,
+                    "{str(self.getRuleCheckUUID())}" AS rule_uuid,
                     "{self.getRuleType().value}" AS type,
                     "{self.getRuleCheckType()}" AS check_type,
                     "{self.getColumnName()}" AS column_name,
@@ -352,9 +353,9 @@ class check_NOT_IN(TDQRuleBase):
                     COUNT(1) AS row_count,
                     COUNTIF({self.getColumnName()} IN({in_sql_statement})) AS unexpected_count,
                     COUNTIF({self.getColumnName()} NOT IN({in_sql_statement})) AS expected_count,
-                    ROUND((COUNTIF({self.getColumnName()} IN({in_sql_statement})) / COUNT(1)), 4) AS unexpected_ratio,
-                    ROUND((COUNTIF({self.getColumnName()} NOT IN({in_sql_statement})) / COUNT(1)), 4) AS expected_ratio,
-                    IF((COUNTIF({self.getColumnName()} IN({in_sql_statement})) / COUNT(1)) > {self.getThreshold()}, False, True) AS is_passed,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IN({in_sql_statement})), COUNT(1)), 0), 4) AS unexpected_ratio,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} NOT IN({in_sql_statement})), COUNT(1)), 0), 4) AS expected_ratio,
+                    IF(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IN({in_sql_statement})), COUNT(1)), 0) > {self.getThreshold()}, False, True) AS is_passed,
                     {self.isValid()} AS is_valid
                 FROM
                     {self.getBaseCTE()}
@@ -374,10 +375,10 @@ class check_IS_TRUE(TDQRuleBase):
     def _prepare_rule_sql(self):
 
         query = f"""
-            cte_check_{str(self.getCheckUUID()).replace('-', '_')} AS (
+            cte_check_{str(self.getRuleCheckUUID()).replace('-', '_')} AS (
                 SELECT 
-                    "{str(self.getBaseUUID())}" AS check_uuid,
-                    "{str(self.getCheckUUID())}" AS rule_uuid,
+                    "{str(self.getCheckUUID())}" AS check_uuid,
+                    "{str(self.getRuleCheckUUID())}" AS rule_uuid,
                     "{self.getRuleType().value}" AS type,
                     "{self.getRuleCheckType()}" AS check_type,
                     "{self.getColumnName()}" AS column_name,
@@ -386,9 +387,9 @@ class check_IS_TRUE(TDQRuleBase):
                     COUNT(1) AS row_count,
                     COUNTIF({self.getColumnName()} IS NOT TRUE) AS unexpected_count,
                     COUNTIF({self.getColumnName()} IS TRUE) AS expected_count,
-                    ROUND((COUNTIF({self.getColumnName()} IS NOT TRUE) / COUNT(1)), 4) AS unexpected_ratio,
-                    ROUND((COUNTIF({self.getColumnName()} IS TRUE) / COUNT(1)), 4) AS expected_ratio,
-                    IF((COUNTIF({self.getColumnName()} IS NOT TRUE) / COUNT(1)) > {self.getThreshold()}, False, True) AS is_passed,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS NOT TRUE), COUNT(1)), 0), 4) AS unexpected_ratio,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS TRUE), COUNT(1)), 0), 4) AS expected_ratio,
+                    IF(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS NOT TRUE), COUNT(1)), 0) > {self.getThreshold()}, False, True) AS is_passed,
                     {self.isValid()} AS is_valid
                 FROM
                     {self.getBaseCTE()}
@@ -408,10 +409,10 @@ class check_IS_FALSE(TDQRuleBase):
     def _prepare_rule_sql(self):
 
         query = f"""
-            cte_check_{str(self.getCheckUUID()).replace('-', '_')} AS (
+            cte_check_{str(self.getRuleCheckUUID()).replace('-', '_')} AS (
                 SELECT 
-                    "{str(self.getBaseUUID())}" AS check_uuid,
-                    "{str(self.getCheckUUID())}" AS rule_uuid,
+                    "{str(self.getCheckUUID())}" AS check_uuid,
+                    "{str(self.getRuleCheckUUID())}" AS rule_uuid,
                     "{self.getRuleType().value}" AS type,
                     "{self.getRuleCheckType()}" AS check_type,
                     "{self.getColumnName()}" AS column_name,
@@ -420,9 +421,9 @@ class check_IS_FALSE(TDQRuleBase):
                     COUNT(1) AS row_count,
                     COUNTIF({self.getColumnName()} IS NOT FALSE) AS unexpected_count,
                     COUNTIF({self.getColumnName()} IS FALSE) AS expected_count,
-                    ROUND((COUNTIF({self.getColumnName()} IS NOT FALSE) / COUNT(1)), 4) AS unexpected_ratio,
-                    ROUND((COUNTIF({self.getColumnName()} IS FALSE) / COUNT(1)), 4) AS expected_ratio,
-                    IF((COUNTIF({self.getColumnName()} IS NOT FALSE) / COUNT(1)) > {self.getThreshold()}, False, True) AS is_passed,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS NOT FALSE), COUNT(1)), 0), 4) AS unexpected_ratio,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS FALSE), COUNT(1)), 0), 4) AS expected_ratio,
+                    IF(COALESCE(SAFE_DIVIDE(COUNTIF({self.getColumnName()} IS NOT FALSE), COUNT(1)), 0) > {self.getThreshold()}, False, True) AS is_passed,
                     {self.isValid()} AS is_valid
                 FROM
                     {self.getBaseCTE()}
@@ -455,10 +456,10 @@ class check_STRING_CONTAINS(TDQRuleBase):
         sql_statement = search_value if case_sensitive else f"(?i){search_value}"
 
         query = f"""
-            cte_check_{str(self.getCheckUUID()).replace('-', '_')} AS (
+            cte_check_{str(self.getRuleCheckUUID()).replace('-', '_')} AS (
                 SELECT 
-                    "{str(self.getBaseUUID())}" AS check_uuid,
-                    "{str(self.getCheckUUID())}" AS rule_uuid,
+                    "{str(self.getCheckUUID())}" AS check_uuid,
+                    "{str(self.getRuleCheckUUID())}" AS rule_uuid,
                     "{self.getRuleType().value}" AS type,
                     "{self.getRuleCheckType()}" AS check_type,
                     "{self.getColumnName()}" AS column_name,
@@ -467,9 +468,9 @@ class check_STRING_CONTAINS(TDQRuleBase):
                     COUNT(1) AS row_count,
                     COUNTIF(NOT REGEXP_CONTAINS({self.getColumnName()}, r'{sql_statement}')) AS unexpected_count,
                     COUNTIF(REGEXP_CONTAINS({self.getColumnName()}, r'{sql_statement}')) AS expected_count,
-                    ROUND((COUNTIF(NOT REGEXP_CONTAINS({self.getColumnName()}, r'{sql_statement}')) / COUNT(1)), 4) AS unexpected_ratio,
-                    ROUND((COUNTIF(REGEXP_CONTAINS({self.getColumnName()}, r'{sql_statement}')) / COUNT(1)), 4) AS expected_ratio,
-                    IF((COUNTIF(NOT REGEXP_CONTAINS({self.getColumnName()}, r'{sql_statement}')) / COUNT(1)) > {self.getThreshold()}, False, True) AS is_passed,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF(NOT REGEXP_CONTAINS({self.getColumnName()}, r'{sql_statement}')), COUNT(1)), 0), 4) AS unexpected_ratio,
+                    ROUND(COALESCE(SAFE_DIVIDE(COUNTIF(REGEXP_CONTAINS({self.getColumnName()}, r'{sql_statement}')), COUNT(1)), 0), 4) AS expected_ratio,
+                    IF(COALESCE(SAFE_DIVIDE(COUNTIF(NOT REGEXP_CONTAINS({self.getColumnName()}, r'{sql_statement}')), COUNT(1)), 0) > {self.getThreshold()}, False, True) AS is_passed,
                     {self.isValid()} AS is_valid
                 FROM
                     {self.getBaseCTE()}
